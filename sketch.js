@@ -17,15 +17,33 @@ function setup() {
     resetSimulation();
 }
 
-function resetSimulation() {
+function resetSimulation(createNewTerrain = false) {
     // Matter.jsの初期化
     engine = Matter.Engine.create({
         gravity: { x: 0, y: 1, scale: 0.001 }
     });
     world = engine.world;
     
-    // 地形の生成
-    createTerrain();
+    // 地形の生成（新世代の開始時のみ）
+    if (createNewTerrain) {
+        grounds = [];
+        createTerrain();
+    } else {
+        // 既存の地形を再作成
+        for (let ground of grounds) {
+            let newGround = Matter.Bodies.fromVertices(
+                ground.position.x,
+                ground.position.y,
+                [ground.vertices],
+                { 
+                    isStatic: true,
+                    friction: 0.5,
+                    restitution: 0.2
+                }
+            );
+            Matter.World.add(world, newGround);
+        }
+    }
     
     // 最初の車体を生成
     if (population.length < POPULATION_SIZE) {
@@ -38,6 +56,19 @@ function resetSimulation() {
     // 現在の個体を生成
     currentCar = new Car(150, 300, population[currentIndex]);
     generationStartTime = millis();
+    
+    // 衝突検出イベントの設定
+    Matter.Events.on(engine, 'collisionStart', function(event) {
+        event.pairs.forEach((pair) => {
+            // 車体（ホイール以外）が地面に触れたかチェック
+            if (currentCar && !currentCar.isWheel(pair.bodyA) && !currentCar.isWheel(pair.bodyB)) {
+                if ((pair.bodyA === currentCar.chassis && grounds.includes(pair.bodyB)) ||
+                    (pair.bodyB === currentCar.chassis && grounds.includes(pair.bodyA))) {
+                    currentCar.failed = true;
+                }
+            }
+        });
+    });
 }
 
 function generateRandomGenome() {
@@ -88,11 +119,11 @@ function draw() {
         text(`Best Distance: ${floor(bestDistance)}`, 20, 90);
         text(`Current Distance: ${floor(currentCar.getDistance())}`, 20, 120);
         
-        // 試行時間が終了したら次の車体へ
-        if (millis() - generationStartTime > CAR_TEST_DURATION) {
+        // 試行時間が終了または車体が失敗したら次の車体へ
+        if (currentCar.failed || millis() - generationStartTime > CAR_TEST_DURATION) {
             // 現在の車体の成績を記録
             let distance = currentCar.getDistance();
-            if (distance > bestDistance) {
+            if (!currentCar.failed && distance > bestDistance) {
                 bestDistance = distance;
                 bestGenome = population[currentIndex];
             }
@@ -104,10 +135,12 @@ function draw() {
                 nextGeneration();
                 currentIndex = 0;
                 currentGeneration++;
+                // 新しい地形で次の世代を開始
+                resetSimulation(true);
+            } else {
+                // 同じ地形で次の車体を評価
+                resetSimulation(false);
             }
-            
-            // シミュレーションをリセット
-            resetSimulation();
         }
     }
 }
@@ -120,6 +153,11 @@ class Car {
         this.chassis = this.createChassis();
         this.wheels = this.createWheels();
         this.startX = x;
+        this.failed = false;
+    }
+    
+    isWheel(body) {
+        return this.wheels.some(w => w.body === body);
     }
     
     createChassis() {
@@ -146,8 +184,9 @@ class Car {
                 this.y + pos.y,
                 15,
                 {
-                    friction: 0.7,
-                    restitution: 0.2
+                    friction: 0.9,
+                    restitution: 0.01,
+                    density: 0.1
                 }
             );
             Matter.World.add(world, wheel);
@@ -183,9 +222,18 @@ class Car {
     }
     
     update() {
-        // 簡単な動力の追加
+        // 車輪の回転力を適用（地面との接触がある場合のみ）
         for (let wheel of this.wheels) {
-            Matter.Body.setAngularVelocity(wheel.body, 0.1);
+            let wheelBody = wheel.body;
+            let contacts = Matter.Query.collides(wheelBody, grounds);
+            
+            if (contacts.length > 0) {
+                // 地面と接触している場合のみ回転力を与える
+                Matter.Body.setAngularVelocity(wheelBody, 0.1);
+            } else {
+                // 空中にある場合は回転を減衰
+                Matter.Body.setAngularVelocity(wheelBody, wheelBody.angularVelocity * 0.95);
+            }
         }
     }
     
