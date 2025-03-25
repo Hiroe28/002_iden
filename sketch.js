@@ -12,8 +12,16 @@ function setup() {
     createCanvas(800, 600);
     
     // Matter.jsの初期化
-    engine = Matter.Engine.create();
+    engine = Matter.Engine.create({
+        gravity: { x: 0, y: 1, scale: 0.001 }
+    });
     world = engine.world;
+    
+    // 物理演算の設定
+    engine.world.gravity.y = 0.98;
+    
+    // decomp ライブラリの設定
+    Matter.Common.setDecomp(decomp);
     
     // 地形の生成
     createTerrain();
@@ -32,12 +40,14 @@ function draw() {
     
     // 地形の描画
     fill(128);
+    noStroke();
     for (let g of ground) {
-        beginShape();
-        for (let vertex of g.vertices) {
-            vertex(vertex.x, vertex.y);
-        }
-        endShape(CLOSE);
+        push();
+        translate(g.position.x, g.position.y);
+        rotate(g.angle);
+        rectMode(CENTER);
+        rect(0, 0, g.bounds.max.x - g.bounds.min.x, g.bounds.max.y - g.bounds.min.y);
+        pop();
     }
     
     // 車の描画と更新
@@ -113,11 +123,17 @@ class Car {
     display() {
         // シャーシの描画
         fill(200, 100, 100);
+        noStroke();
+        push();
+        translate(this.chassis.position.x, this.chassis.position.y);
+        rotate(this.chassis.angle);
         beginShape();
         for (let vertex of this.chassis.vertices) {
-            vertex(vertex.x, vertex.y);
+            let pos = Matter.Vector.sub(vertex, this.chassis.position);
+            vertex(pos.x, pos.y);
         }
         endShape(CLOSE);
+        pop();
         
         // タイヤの描画
         fill(50);
@@ -223,6 +239,7 @@ function createTerrain() {
     let segments = 10;
     let points = [];
     
+    // 地形のポイントを生成
     for (let i = 0; i <= segments; i++) {
         let x = map(i, 0, segments, 0, width);
         let y = height - 100 + random(-30, 30);
@@ -231,19 +248,27 @@ function createTerrain() {
         points.push({ x, y });
     }
     
+    // 地形のセグメントを生成
     for (let i = 0; i < points.length - 1; i++) {
-        let groundBody = Matter.Bodies.fromVertices(
+        let segment = Matter.Bodies.rectangle(
             (points[i].x + points[i + 1].x) / 2,
             (points[i].y + points[i + 1].y) / 2,
-            [
-                { x: points[i].x, y: points[i].y },
-                { x: points[i + 1].x, y: points[i + 1].y },
-                { x: points[i + 1].x, y: height },
-                { x: points[i].x, y: height }
-            ],
-            { isStatic: true }
+            points[i + 1].x - points[i].x,
+            20,
+            { 
+                isStatic: true,
+                angle: Math.atan2(
+                    points[i + 1].y - points[i].y,
+                    points[i + 1].x - points[i].x
+                )
+            }
         );
-        Matter.World.add(world, groundBody);
-        ground.push(groundBody);
+        Matter.World.add(world, segment);
+        ground.push(segment);
     }
+    
+    // 地面の壁を追加
+    let floor = Matter.Bodies.rectangle(width/2, height + 10, width, 20, { isStatic: true });
+    Matter.World.add(world, floor);
+    ground.push(floor);
 }
