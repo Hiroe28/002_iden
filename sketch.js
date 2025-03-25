@@ -124,16 +124,11 @@ class Car {
         // シャーシの描画
         fill(200, 100, 100);
         noStroke();
-        push();
-        translate(this.chassis.position.x, this.chassis.position.y);
-        rotate(this.chassis.angle);
         beginShape();
-        for (let vertex of this.chassis.vertices) {
-            let pos = Matter.Vector.sub(vertex, this.chassis.position);
-            vertex(pos.x, pos.y);
+        for (let v of this.chassis.vertices) {
+            vertex(v.x, v.y);
         }
         endShape(CLOSE);
-        pop();
         
         // タイヤの描画
         fill(50);
