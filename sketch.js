@@ -1,85 +1,27 @@
 let engine;
 let world;
-let currentCar;
-let grounds = [];
+let cars = [];
+let ground = [];
 const POPULATION_SIZE = 20;
 let currentGeneration = 1;
-let currentIndex = 0;
-let generationStartTime;
-const CAR_TEST_DURATION = 5000; // 各車体の試行時間（ミリ秒）
-const MUTATION_RATE = 0.1;
-let population = []; // 遺伝情報を保存
-let bestDistance = 0;
-let bestGenome = null;
+let simulationTime = 0;
+const SIMULATION_DURATION = 300;  // 各世代の評価時間
+let bestFitness = 0;
 
 function setup() {
     createCanvas(800, 600);
-    resetSimulation(true); // 初回は地形を生成
-}
-
-function resetSimulation(createNewTerrain = false) {
+    
     // Matter.jsの初期化
-    engine = Matter.Engine.create({
-        gravity: { x: 0, y: 1, scale: 0.001 }
-    });
+    engine = Matter.Engine.create();
     world = engine.world;
     
-    // 地形の生成（新世代の開始時のみ）
-    if (createNewTerrain) {
-        grounds = [];
-        createTerrain();
-    } else if (grounds.length > 0) {
-        // 既存の地形を再作成
-        let oldGrounds = grounds;
-        grounds = [];
-        for (let ground of oldGrounds) {
-            let newGround = Matter.Bodies.fromVertices(
-                ground.position.x,
-                ground.position.y,
-                [ground.vertices],
-                { 
-                    isStatic: true,
-                    friction: 0.5,
-                    restitution: 0.2
-                }
-            );
-            if (newGround) {
-                Matter.World.add(world, newGround);
-                grounds.push(newGround);
-            }
-        }
-    }
+    // 地形の生成
+    createTerrain();
     
-    // 最初の車体を生成
-    if (population.length < POPULATION_SIZE) {
-        // 初期世代の場合、ランダムな遺伝情報を生成
-        for (let i = 0; i < POPULATION_SIZE; i++) {
-            population.push(generateRandomGenome());
-        }
+    // 初期個体群の生成
+    for (let i = 0; i < POPULATION_SIZE; i++) {
+        cars.push(new Car(100, 300));
     }
-    
-    // 現在の個体を生成
-    currentCar = new Car(150, 300, population[currentIndex]);
-    generationStartTime = millis();
-}
-
-function generateRandomGenome() {
-    // 車体の形状と車輪の位置をエンコード
-    let vertices = [];
-    for (let i = 0; i < 8; i++) {
-        vertices.push({
-            angle: random(TWO_PI),
-            radius: random(20, 40)
-        });
-    }
-    
-    return {
-        vertices: vertices,
-        wheelPositions: [
-            { x: random(-30, 30), y: random(0, 30) },
-            { x: random(-30, 30), y: random(0, 30) }
-        ]
-    };
 }
 
 function draw() {
@@ -89,107 +31,77 @@ function draw() {
     Matter.Engine.update(engine);
     
     // 地形の描画
-    fill(128);
-    noStroke();
-    for (let g of grounds) {
+    for (let g of ground) {
+        fill(128);
         beginShape();
-        for (let v of g.vertices) {
-            vertex(v.x, v.y);
+        for (let vertex of g.vertices) {
+            vertex(vertex.x, vertex.y);
         }
         endShape(CLOSE);
     }
     
-    // 現在の車体の描画と更新
-    if (currentCar) {
-        currentCar.display();
-        currentCar.update();
-        
-        // 情報表示
-        fill(0);
-        textSize(20);
-        text(`Generation: ${currentGeneration}`, 20, 30);
-        text(`Car: ${currentIndex + 1}/${POPULATION_SIZE}`, 20, 60);
-        text(`Best Distance: ${floor(bestDistance)}`, 20, 90);
-        text(`Current Distance: ${floor(currentCar.getDistance())}`, 20, 120);
-        
-        // 試行時間が終了したら次の車体へ
-        if (millis() - generationStartTime > CAR_TEST_DURATION) {
-            // 現在の車体の成績を記録
-            let distance = currentCar.getDistance();
-            if (distance > bestDistance) {
-                bestDistance = distance;
-                bestGenome = {...population[currentIndex]};
-            }
-            
-            // 次の車体へ
-            currentIndex++;
-            if (currentIndex >= POPULATION_SIZE) {
-                // 世代の終了
-                nextGeneration();
-                currentIndex = 0;
-                currentGeneration++;
-                // 新しい地形で次の世代を開始
-                resetSimulation(true);
-            } else {
-                // 同じ地形で次の車体を評価
-                resetSimulation(false);
-            }
-        }
+    // 車の描画と更新
+    for (let car of cars) {
+        car.display();
+        car.update();
+        bestFitness = Math.max(bestFitness, car.fitness);
     }
+    
+    // シミュレーション時間の更新
+    simulationTime++;
+    
+    // 一定時間経過後に世代交代
+    if (simulationTime >= SIMULATION_DURATION) {
+        nextGeneration();
+        simulationTime = 0;
+    }
+    
+    // 情報の表示
+    fill(0);
+    textSize(20);
+    text(`Generation: ${currentGeneration}`, 20, 30);
+    text(`Best Fitness: ${bestFitness.toFixed(2)}`, 20, 60);
 }
 
 class Car {
-    constructor(x, y, genome) {
+    constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.genome = genome;
         this.chassis = this.createChassis();
         this.wheels = this.createWheels();
-        this.startX = x;
-    }
-    
-    isWheel(body) {
-        return this.wheels.some(w => w.body === body);
+        this.fitness = 0;
     }
     
     createChassis() {
         let vertices = [];
-        for (let v of this.genome.vertices) {
-            let x = this.x + cos(v.angle) * v.radius;
-            let y = this.y + sin(v.angle) * v.radius;
-            vertices.push(Matter.Vector.create(x, y));
+        // ランダムな多角形の頂点を生成
+        for (let i = 0; i < 8; i++) {
+            let angle = map(i, 0, 8, 0, TWO_PI);
+            let r = random(20, 40);
+            let x = cos(angle) * r;
+            let y = sin(angle) * r;
+            vertices.push({ x, y });
         }
         
-        let body = Matter.Bodies.fromVertices(this.x, this.y, [vertices], {
-            friction: 0.5,
-            restitution: 0.3,
-            density: 0.001
-        });
+        let body = Matter.Bodies.fromVertices(this.x, this.y, vertices);
         Matter.World.add(world, body);
         return body;
     }
     
     createWheels() {
         let wheels = [];
-        for (let pos of this.genome.wheelPositions) {
+        for (let i = 0; i < 2; i++) {
             let wheel = Matter.Bodies.circle(
-                this.x + pos.x,
-                this.y + pos.y,
-                15,
-                {
-                    friction: 0.9,
-                    restitution: 0.01,
-                    density: 0.002
-                }
+                this.x + (i * 60 - 30),
+                this.y + 30,
+                15
             );
             Matter.World.add(world, wheel);
             
             let constraint = Matter.Constraint.create({
                 bodyA: this.chassis,
                 bodyB: wheel,
-                pointA: { x: pos.x, y: pos.y },
-                stiffness: 0.5,
-                length: 0
+                stiffness: 0.5
             });
             Matter.World.add(world, constraint);
             
@@ -201,157 +113,137 @@ class Car {
     display() {
         // シャーシの描画
         fill(200, 100, 100);
-        noStroke();
         beginShape();
-        for (let v of this.chassis.vertices) {
-            vertex(v.x, v.y);
+        for (let vertex of this.chassis.vertices) {
+            vertex(vertex.x, vertex.y);
         }
         endShape(CLOSE);
         
         // タイヤの描画
         fill(50);
         for (let wheel of this.wheels) {
-            ellipse(wheel.body.position.x, wheel.body.position.y, 30, 30);
+            circle(wheel.body.position.x, wheel.body.position.y, 30);
         }
     }
     
     update() {
-        // 車輪の回転力を適用（地面との接触がある場合のみ）
-        for (let wheel of this.wheels) {
-            let wheelBody = wheel.body;
-            let contacts = Matter.Query.collides(wheelBody, grounds);
-            
-            if (contacts.length > 0) {
-                // 地面と接触している場合のみ回転力を与える
-                Matter.Body.setAngularVelocity(wheelBody, 0.1);
+        // 進んだ距離と安定性を考慮した適応度
+        let distance = this.chassis.position.x - 100;  // 初期位置からの距離
+        let stability = 1 / (1 + Math.abs(this.chassis.angle));  // 車体の傾きが少ないほど高スコア
+        let speed = Math.abs(this.chassis.velocity.x);  // 速度も評価
+        this.fitness = distance * stability * (0.5 + speed * 0.5);
+        
+        // 動力の追加（車輪の回転）
+        Matter.Body.setAngularVelocity(this.wheels[0].body, 0.1);
+        Matter.Body.setAngularVelocity(this.wheels[1].body, 0.1);
+    }
+    
+    static crossover(parent1, parent2) {
+        let child = new Car(100, 300);
+        // 親の特徴を組み合わせて新しい車体を生成
+        let vertices = [];
+        for (let i = 0; i < 8; i++) {
+            if (random() < 0.5) {
+                vertices.push({
+                    x: parent1.chassis.vertices[i].x - parent1.chassis.position.x,
+                    y: parent1.chassis.vertices[i].y - parent1.chassis.position.y
+                });
             } else {
-                // 空中にある場合は回転を減衰
-                Matter.Body.setAngularVelocity(wheelBody, wheelBody.angularVelocity * 0.95);
+                vertices.push({
+                    x: parent2.chassis.vertices[i].x - parent2.chassis.position.x,
+                    y: parent2.chassis.vertices[i].y - parent2.chassis.position.y
+                });
             }
+        }
+        Matter.World.remove(world, child.chassis);
+        child.chassis = Matter.Bodies.fromVertices(child.x, child.y, vertices);
+        Matter.World.add(world, child.chassis);
+        return child;
+    }
+    
+    static mutate(car) {
+        // ランダムな頂点を少し動かす
+        let vertices = car.chassis.vertices.map(v => ({
+            x: v.x - car.chassis.position.x,
+            y: v.y - car.chassis.position.y
+        }));
+        
+        for (let i = 0; i < vertices.length; i++) {
+            if (random() < 0.1) {  // 10%の確率で突然変異
+                vertices[i].x += random(-5, 5);
+                vertices[i].y += random(-5, 5);
+            }
+        }
+        
+        Matter.World.remove(world, car.chassis);
+        car.chassis = Matter.Bodies.fromVertices(car.x, car.y, vertices);
+        Matter.World.add(world, car.chassis);
+    }
+}
+
+function nextGeneration() {
+    // 適応度でソート
+    cars.sort((a, b) => b.fitness - a.fitness);
+    
+    // 上位50%を選択
+    let selected = cars.slice(0, POPULATION_SIZE / 2);
+    
+    // 新しい世代の作成
+    let newCars = [];
+    
+    // エリート保存（上位2個体をそのまま次世代に）
+    newCars.push(new Car(100, 300));
+    Object.assign(newCars[0].chassis.vertices, selected[0].chassis.vertices);
+    newCars.push(new Car(100, 300));
+    Object.assign(newCars[1].chassis.vertices, selected[1].chassis.vertices);
+    
+    // 残りは交配と突然変異で生成
+    while (newCars.length < POPULATION_SIZE) {
+        let parent1 = selected[Math.floor(random(selected.length))];
+        let parent2 = selected[Math.floor(random(selected.length))];
+        let child = Car.crossover(parent1, parent2);
+        Car.mutate(child);
+        newCars.push(child);
+    }
+    
+    // 古い個体の削除
+    for (let car of cars) {
+        Matter.World.remove(world, car.chassis);
+        for (let wheel of car.wheels) {
+            Matter.World.remove(world, wheel.body);
+            Matter.World.remove(world, wheel.constraint);
         }
     }
     
-    getDistance() {
-        return this.chassis.position.x - this.startX;
-    }
+    cars = newCars;
+    currentGeneration++;
 }
 
 function createTerrain() {
     let segments = 10;
     let points = [];
     
-    // スタート地点は平らに
-    points.push({ x: 0, y: height - 100 });
-    points.push({ x: 300, y: height - 100 });
-    
-    // その後は起伏のある地形
-    for (let i = 2; i <= segments; i++) {
-        let x = map(i, 2, segments, 300, width);
+    for (let i = 0; i <= segments; i++) {
+        let x = map(i, 0, segments, 0, width);
         let y = height - 100 + random(-30, 30);
-        if (i === segments) y = height - 100; // 終点も平らに
+        if (i === 0) y = height;
+        if (i === segments) y = height;
         points.push({ x, y });
     }
     
-    // 地形の生成
     for (let i = 0; i < points.length - 1; i++) {
-        let ground = Matter.Bodies.rectangle(
+        let ground = Matter.Bodies.fromVertices(
             (points[i].x + points[i + 1].x) / 2,
-            (points[i].y + points[i + 1].y) / 2 + 50,
-            points[i + 1].x - points[i].x,
-            100,
-            { 
-                isStatic: true,
-                friction: 0.5,
-                restitution: 0.2
-            }
+            (points[i].y + points[i + 1].y) / 2,
+            [
+                { x: points[i].x, y: points[i].y },
+                { x: points[i + 1].x, y: points[i + 1].y },
+                { x: points[i + 1].x, y: height },
+                { x: points[i].x, y: height }
+            ],
+            { isStatic: true }
         );
         Matter.World.add(world, ground);
-        grounds.push(ground);
+        ground.push(ground);
     }
-}
-
-function nextGeneration() {
-    // 現在の世代をフィットネスでソート
-    let sortedPopulation = [...population];
-    sortedPopulation.sort((a, b) => {
-        let distanceA = bestDistance;
-        let distanceB = bestDistance;
-        return distanceB - distanceA;
-    });
-    
-    let newPopulation = [];
-    
-    // エリート選択（上位2個体をそのまま次世代に）
-    newPopulation.push({...sortedPopulation[0]});
-    newPopulation.push({...sortedPopulation[1]});
-    
-    // 残りの個体を交配で生成
-    while (newPopulation.length < POPULATION_SIZE) {
-        let parent1 = selectParent(sortedPopulation);
-        let parent2 = selectParent(sortedPopulation);
-        let child = crossover(parent1, parent2);
-        child = mutate(child);
-        newPopulation.push(child);
-    }
-    
-    population = newPopulation;
-}
-
-function selectParent(sortedPopulation) {
-    // トーナメント選択
-    let tournament = [];
-    for (let i = 0; i < 3; i++) {
-        tournament.push(sortedPopulation[floor(random(sortedPopulation.length))]);
-    }
-    return tournament[0];
-}
-
-function crossover(parent1, parent2) {
-    let child = {
-        vertices: [],
-        wheelPositions: []
-    };
-    
-    // 頂点の交配
-    for (let i = 0; i < parent1.vertices.length; i++) {
-        if (random() < 0.5) {
-            child.vertices.push({...parent1.vertices[i]});
-        } else {
-            child.vertices.push({...parent2.vertices[i]});
-        }
-    }
-    
-    // 車輪位置の交配
-    for (let i = 0; i < parent1.wheelPositions.length; i++) {
-        if (random() < 0.5) {
-            child.wheelPositions.push({...parent1.wheelPositions[i]});
-        } else {
-            child.wheelPositions.push({...parent2.wheelPositions[i]});
-        }
-    }
-    
-    return child;
-}
-
-function mutate(genome) {
-    // 頂点の突然変異
-    for (let vertex of genome.vertices) {
-        if (random() < MUTATION_RATE) {
-            vertex.angle += random(-0.5, 0.5);
-            vertex.radius += random(-5, 5);
-            vertex.radius = constrain(vertex.radius, 20, 40);
-        }
-    }
-    
-    // 車輪位置の突然変異
-    for (let pos of genome.wheelPositions) {
-        if (random() < MUTATION_RATE) {
-            pos.x += random(-5, 5);
-            pos.y += random(-5, 5);
-            pos.x = constrain(pos.x, -30, 30);
-            pos.y = constrain(pos.y, 0, 30);
-        }
-    }
-    
-    return genome;
 }
