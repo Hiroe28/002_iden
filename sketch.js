@@ -1,7 +1,7 @@
 let engine;
 let world;
 let cars = [];
-let ground = [];
+let grounds = [];
 const POPULATION_SIZE = 20;
 let currentGeneration = 1;
 
@@ -28,11 +28,11 @@ function draw() {
     Matter.Engine.update(engine);
     
     // 地形の描画
-    for (let g of ground) {
-        fill(128);
+    fill(128);
+    for (let g of grounds) {
         beginShape();
-        for (let vertex of g.vertices) {
-            vertex(vertex.x, vertex.y);
+        for (let v of g.vertices) {
+            vertex(v.x, v.y);
         }
         endShape(CLOSE);
     }
@@ -100,15 +100,15 @@ class Car {
         // シャーシの描画
         fill(200, 100, 100);
         beginShape();
-        for (let vertex of this.chassis.vertices) {
-            vertex(vertex.x, vertex.y);
+        for (let v of this.chassis.vertices) {
+            vertex(v.x, v.y);
         }
         endShape(CLOSE);
         
         // タイヤの描画
         fill(50);
         for (let wheel of this.wheels) {
-            circle(wheel.body.position.x, wheel.body.position.y, 30);
+            ellipse(wheel.body.position.x, wheel.body.position.y, 30, 30);
         }
     }
     
@@ -146,6 +146,6 @@ function createTerrain() {
             { isStatic: true }
         );
         Matter.World.add(world, ground);
-        ground.push(ground);
+        grounds.push(ground);
     }
 }
