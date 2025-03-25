@@ -31,8 +31,8 @@ function draw() {
     Matter.Engine.update(engine);
     
     // 地形の描画
+    fill(128);
     for (let g of ground) {
-        fill(128);
         beginShape();
         for (let vertex of g.vertices) {
             vertex(vertex.x, vertex.y);
@@ -232,7 +232,7 @@ function createTerrain() {
     }
     
     for (let i = 0; i < points.length - 1; i++) {
-        let ground = Matter.Bodies.fromVertices(
+        let groundBody = Matter.Bodies.fromVertices(
             (points[i].x + points[i + 1].x) / 2,
             (points[i].y + points[i + 1].y) / 2,
             [
@@ -243,7 +243,7 @@ function createTerrain() {
             ],
             { isStatic: true }
         );
-        Matter.World.add(world, ground);
-        ground.push(ground);
+        Matter.World.add(world, groundBody);
+        ground.push(groundBody);
     }
 }
