@@ -9,8 +9,15 @@ function setup() {
     createCanvas(800, 600);
     
     // Matter.jsの初期化
-    engine = Matter.Engine.create();
+    engine = Matter.Engine.create({
+        gravity: { x: 0, y: 1, scale: 0.001 }
+    });
     world = engine.world;
+    
+    // 衝突イベントの設定
+    Matter.Events.on(engine, 'collisionStart', function(event) {
+        console.log('Collision detected');
+    });
     
     // 地形の生成
     createTerrain();
@@ -64,12 +71,15 @@ class Car {
         for (let i = 0; i < 8; i++) {
             let angle = map(i, 0, 8, 0, TWO_PI);
             let r = random(20, 40);
-            let x = cos(angle) * r;
-            let y = sin(angle) * r;
-            vertices.push({ x, y });
+            let x = this.x + cos(angle) * r;
+            let y = this.y + sin(angle) * r;
+            vertices.push(Matter.Vector.create(x, y));
         }
         
-        let body = Matter.Bodies.fromVertices(this.x, this.y, vertices);
+        let body = Matter.Bodies.fromVertices(this.x, this.y, [vertices], {
+            friction: 0.5,
+            restitution: 0.3
+        });
         Matter.World.add(world, body);
         return body;
     }
@@ -80,14 +90,20 @@ class Car {
             let wheel = Matter.Bodies.circle(
                 this.x + (i * 60 - 30),
                 this.y + 30,
-                15
+                15,
+                {
+                    friction: 0.7,
+                    restitution: 0.2
+                }
             );
             Matter.World.add(world, wheel);
             
             let constraint = Matter.Constraint.create({
                 bodyA: this.chassis,
                 bodyB: wheel,
-                stiffness: 0.5
+                pointA: { x: (i * 60 - 30), y: 30 },
+                stiffness: 0.5,
+                length: 0
             });
             Matter.World.add(world, constraint);
             
