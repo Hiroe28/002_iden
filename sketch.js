@@ -150,16 +150,21 @@ function createTerrain() {
     }
     
     for (let i = 0; i < points.length - 1; i++) {
+        let vertices = [
+            { x: points[i].x, y: points[i].y },
+            { x: points[i + 1].x, y: points[i + 1].y },
+            { x: points[i + 1].x, y: height },
+            { x: points[i].x, y: height }
+        ];
         let ground = Matter.Bodies.fromVertices(
             (points[i].x + points[i + 1].x) / 2,
             (points[i].y + points[i + 1].y) / 2,
-            [
-                { x: points[i].x, y: points[i].y },
-                { x: points[i + 1].x, y: points[i + 1].y },
-                { x: points[i + 1].x, y: height },
-                { x: points[i].x, y: height }
-            ],
-            { isStatic: true }
+            [vertices],
+            { 
+                isStatic: true,
+                friction: 0.5,
+                restitution: 0.2
+            }
         );
         Matter.World.add(world, ground);
         grounds.push(ground);
