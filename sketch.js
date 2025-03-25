@@ -14,7 +14,7 @@ let bestGenome = null;
 
 function setup() {
     createCanvas(800, 600);
-    resetSimulation();
+    resetSimulation(true); // 初回は地形を生成
 }
 
 function resetSimulation(createNewTerrain = false) {
@@ -28,9 +28,11 @@ function resetSimulation(createNewTerrain = false) {
     if (createNewTerrain) {
         grounds = [];
         createTerrain();
-    } else {
+    } else if (grounds.length > 0) {
         // 既存の地形を再作成
-        for (let ground of grounds) {
+        let oldGrounds = grounds;
+        grounds = [];
+        for (let ground of oldGrounds) {
             let newGround = Matter.Bodies.fromVertices(
                 ground.position.x,
                 ground.position.y,
@@ -41,7 +43,10 @@ function resetSimulation(createNewTerrain = false) {
                     restitution: 0.2
                 }
             );
-            Matter.World.add(world, newGround);
+            if (newGround) {
+                Matter.World.add(world, newGround);
+                grounds.push(newGround);
+            }
         }
     }
     
@@ -56,19 +61,6 @@ function resetSimulation(createNewTerrain = false) {
     // 現在の個体を生成
     currentCar = new Car(150, 300, population[currentIndex]);
     generationStartTime = millis();
-    
-    // 衝突検出イベントの設定
-    Matter.Events.on(engine, 'collisionStart', function(event) {
-        event.pairs.forEach((pair) => {
-            // 車体（ホイール以外）が地面に触れたかチェック
-            if (currentCar && !currentCar.isWheel(pair.bodyA) && !currentCar.isWheel(pair.bodyB)) {
-                if ((pair.bodyA === currentCar.chassis && grounds.includes(pair.bodyB)) ||
-                    (pair.bodyB === currentCar.chassis && grounds.includes(pair.bodyA))) {
-                    currentCar.failed = true;
-                }
-            }
-        });
-    });
 }
 
 function generateRandomGenome() {
@@ -98,6 +90,7 @@ function draw() {
     
     // 地形の描画
     fill(128);
+    noStroke();
     for (let g of grounds) {
         beginShape();
         for (let v of g.vertices) {
@@ -119,13 +112,13 @@ function draw() {
         text(`Best Distance: ${floor(bestDistance)}`, 20, 90);
         text(`Current Distance: ${floor(currentCar.getDistance())}`, 20, 120);
         
-        // 試行時間が終了または車体が失敗したら次の車体へ
-        if (currentCar.failed || millis() - generationStartTime > CAR_TEST_DURATION) {
+        // 試行時間が終了したら次の車体へ
+        if (millis() - generationStartTime > CAR_TEST_DURATION) {
             // 現在の車体の成績を記録
             let distance = currentCar.getDistance();
-            if (!currentCar.failed && distance > bestDistance) {
+            if (distance > bestDistance) {
                 bestDistance = distance;
-                bestGenome = population[currentIndex];
+                bestGenome = {...population[currentIndex]};
             }
             
             // 次の車体へ
@@ -153,7 +146,6 @@ class Car {
         this.chassis = this.createChassis();
         this.wheels = this.createWheels();
         this.startX = x;
-        this.failed = false;
     }
     
     isWheel(body) {
@@ -170,7 +162,8 @@ class Car {
         
         let body = Matter.Bodies.fromVertices(this.x, this.y, [vertices], {
             friction: 0.5,
-            restitution: 0.3
+            restitution: 0.3,
+            density: 0.001
         });
         Matter.World.add(world, body);
         return body;
@@ -186,7 +179,7 @@ class Car {
                 {
                     friction: 0.9,
                     restitution: 0.01,
-                    density: 0.1
+                    density: 0.002
                 }
             );
             Matter.World.add(world, wheel);
@@ -208,6 +201,7 @@ class Car {
     display() {
         // シャーシの描画
         fill(200, 100, 100);
+        noStroke();
         beginShape();
         for (let v of this.chassis.vertices) {
             vertex(v.x, v.y);
@@ -260,16 +254,11 @@ function createTerrain() {
     
     // 地形の生成
     for (let i = 0; i < points.length - 1; i++) {
-        let vertices = [
-            { x: points[i].x, y: points[i].y },
-            { x: points[i + 1].x, y: points[i + 1].y },
-            { x: points[i + 1].x, y: height },
-            { x: points[i].x, y: height }
-        ];
-        let ground = Matter.Bodies.fromVertices(
+        let ground = Matter.Bodies.rectangle(
             (points[i].x + points[i + 1].x) / 2,
-            (points[i].y + points[i + 1].y) / 2,
-            [vertices],
+            (points[i].y + points[i + 1].y) / 2 + 50,
+            points[i + 1].x - points[i].x,
+            100,
             { 
                 isStatic: true,
                 friction: 0.5,
@@ -285,7 +274,7 @@ function nextGeneration() {
     // 現在の世代をフィットネスでソート
     let sortedPopulation = [...population];
     sortedPopulation.sort((a, b) => {
-        let distanceA = bestDistance; // ここは実際の距離を使用する必要があります
+        let distanceA = bestDistance;
         let distanceB = bestDistance;
         return distanceB - distanceA;
     });
@@ -293,8 +282,8 @@ function nextGeneration() {
     let newPopulation = [];
     
     // エリート選択（上位2個体をそのまま次世代に）
-    newPopulation.push(sortedPopulation[0]);
-    newPopulation.push(sortedPopulation[1]);
+    newPopulation.push({...sortedPopulation[0]});
+    newPopulation.push({...sortedPopulation[1]});
     
     // 残りの個体を交配で生成
     while (newPopulation.length < POPULATION_SIZE) {
@@ -314,7 +303,7 @@ function selectParent(sortedPopulation) {
     for (let i = 0; i < 3; i++) {
         tournament.push(sortedPopulation[floor(random(sortedPopulation.length))]);
     }
-    return tournament[0]; // 簡略化のため、最初の個体を選択
+    return tournament[0];
 }
 
 function crossover(parent1, parent2) {
